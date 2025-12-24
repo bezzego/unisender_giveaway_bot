@@ -4,6 +4,7 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from app.config import settings
@@ -17,7 +18,6 @@ log = logging.getLogger(__name__)
 
 
 async def init_db() -> None:
-    # Minimal schema init (for production лучше миграции Alembic, но для быстрого старта ок)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -27,7 +27,11 @@ async def main() -> None:
 
     await init_db()
 
-    bot = Bot(token=settings.bot_token, parse_mode=ParseMode.HTML)
+    bot = Bot(
+        token=settings.bot_token,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+
     dp = Dispatcher()
     dp.include_router(router)
 
