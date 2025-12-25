@@ -54,3 +54,9 @@ class ParticipantRepo:
         count = int(res.scalar_one())
         log.debug("Cinema winners count fetched", extra={"count": count})
         return count
+
+    @staticmethod
+    async def list_all(session: AsyncSession) -> list[Participant]:
+        log.debug("Listing all participants")
+        res = await session.execute(select(Participant).order_by(Participant.id.asc()))
+        return list(res.scalars().all())

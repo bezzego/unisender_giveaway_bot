@@ -46,3 +46,16 @@ class PromoCodeRepo:
                 used_at=datetime.now(tz=timezone.utc),
             )
         )
+
+    @staticmethod
+    async def stats(session: AsyncSession, kind: str = "cinema") -> dict[str, int]:
+        total_res = await session.execute(
+            select(PromoCode.id).where(PromoCode.kind == kind)
+        )
+        total = len(total_res.fetchall())
+        used_res = await session.execute(
+            select(PromoCode.id).where(PromoCode.kind == kind, PromoCode.is_used.is_(True))
+        )
+        used = len(used_res.fetchall())
+        free = total - used
+        return {"total": total, "used": used, "free": free}

@@ -41,3 +41,21 @@ class PromoCode(Base):
     used_by_participant_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class BotText(Base):
+    __tablename__ = "bot_texts"
+    __table_args__ = (UniqueConstraint("key", name="uq_bot_texts_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(128), nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class BotConfig(Base):
+    __tablename__ = "bot_config"
+    __table_args__ = (UniqueConstraint("key", name="uq_bot_config_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(128), nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
