@@ -30,11 +30,16 @@ WELCOME = (
 
 @router.message(CommandStart())
 async def start(m: Message) -> None:
+    log.info("Start command received", extra={"telegram_id": m.from_user.id if m.from_user else None})
     await m.answer(WELCOME)
 
 
 @router.callback_query(F.data == "check_again")
 async def check_again(cb: CallbackQuery) -> None:
+    log.info(
+        "Check again callback",
+        extra={"telegram_id": cb.from_user.id if cb.from_user else None},
+    )
     await cb.answer()
     await cb.message.answer("Ок! Пришли email ещё раз (или тот же).")
 
@@ -43,6 +48,7 @@ async def check_again(cb: CallbackQuery) -> None:
 async def email_flow(m: Message) -> None:
     tg_id = m.from_user.id if m.from_user else 0
     if tg_id == 0:
+        log.error("Telegram ID not found in message")
         await m.answer("Не смог определить ваш Telegram ID. Попробуйте ещё раз.")
         return
 
@@ -50,21 +56,33 @@ async def email_flow(m: Message) -> None:
     try:
         email = normalize_email(m.text or "")
     except ValueError:
+        log.warning("Invalid email received", extra={"telegram_id": tg_id, "text": m.text})
         await m.answer("Похоже, это не email. Пришли адрес в формате name@example.com")
         return
+    log.info("Email received", extra={"telegram_id": tg_id, "email": email})
 
     # 2) check Unisender confirmation + list membership
     try:
         status = await unisender.check_confirmed_in_list(email=email, list_id=settings.unisender_list_id)
-    except Exception as e:
+    except Exception:
         log.exception("Unisender check failed")
         await m.answer("Сервис проверки подписки временно недоступен. Попробуй чуть позже.")
         return
+    log.debug(
+        "Unisender status fetched",
+        extra={
+            "email": email,
+            "email_status": status.email_status,
+            "in_list": status.in_list,
+            "list_status": status.list_status,
+        },
+    )
 
     # confirmed means: email active + in list + list status active
     confirmed = (status.email_status == "active") and status.in_list and (status.list_status == "active")
 
     if not confirmed:
+        log.warning("Email not confirmed", extra={"email": email, "status": status})
         # explain precisely based on statuses (invited is the typical "not confirmed yet")  [oai_citation:3‡Unisender](https://www.unisender.com/ru/support/api/contacts/getcontact/)
         if status.email_status == "invited":
             reason = (
@@ -95,33 +113,34 @@ async def email_flow(m: Message) -> None:
     # 3) confirmed: DB transaction: create participant + assign reward atomically
     async with SessionMaker() as session:
         async with session.begin():
+            log.info("Creating or loading participant", extra={"telegram_id": tg_id, "email": email})
             participant = await ParticipantRepo.create_if_missing(session, telegram_id=tg_id, email=email)
 
             # if already rewarded — show the same
             if participant.reward_type:
-                if participant.reward_type == "cinema":
-                    await m.answer(
-                        "✅ Ты уже получал подарок.\n\n"
-                        f"🎟 Промокод на кино: <code>{participant.promo_code}</code>"
-                    )
-                    return
-                if participant.reward_type == "promo":
-                    await m.answer(
-                        "✅ Ты уже получал подарок.\n\n"
-                        f"🎁 Промокод: <code>{participant.promo_code}</code>"
-                    )
-                    return
-                if participant.reward_type == "guide":
-                    await m.answer(
-                        "✅ Ты уже получал подарок.\n\n"
-                        f"🎭 Гайд: {settings.guide_link}"
-                    )
-                    return
+                log.info(
+                    "Participant already rewarded",
+                    extra={
+                        "participant_id": participant.id,
+                        "reward_type": participant.reward_type,
+                    },
+                )
+                message = RewardService.render_message(
+                    reward_type=participant.reward_type,
+                    promo_code=participant.promo_code,
+                )
+                await m.answer(f"✅ Ты уже получал подарок.\n\n{message}")
+                return
 
             # assign new reward
+            log.info("Assigning new reward", extra={"participant_id": participant.id})
             reward = await RewardService.assign_reward(session, participant_id=participant.id)
             participant.reward_type = reward.reward_type
             participant.promo_code = reward.promo_code
 
         # committed
+        log.info(
+            "Reward assigned and committed",
+            extra={"participant_id": participant.id, "reward_type": reward.reward_type},
+        )
         await m.answer(reward.message)

@@ -18,13 +18,16 @@ log = logging.getLogger(__name__)
 
 
 async def init_db() -> None:
+    log.info("Initializing database")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    log.info("Database initialized")
 
 
 async def main() -> None:
     setup_logging(settings.log_level)
 
+    log.info("Application starting")
     await init_db()
 
     bot = Bot(
